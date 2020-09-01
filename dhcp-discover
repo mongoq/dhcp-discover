@@ -1,9 +1,11 @@
 #!/bin/bash
 
-#https://askubuntu.com/questions/474556/hiding-output-of-a-command#:~:text=To%20hide%20the%20output%20of,redirected%20to%20%2Fdev%2Fnull%20.&text=Silent%20grep%20%3A%20grep%20%2Dq%20%22,used%20to%20hide%20the%20output.
-#https://danielmiessler.com/study/tcpdump/
+# Say hello
+echo -e "\nDHCP-Discover\n"
+echo -e "Power on your new network node."
+echo -e "Give it a new DHCP-lease."
 
-# Check if Root
+# Check if root
 if [ "$EUID" -ne 0 ]
   then echo -e "\nPlease run as root!\n"
   exit 1
@@ -11,93 +13,64 @@ fi
 
 # Specify network interface
 if [[ $# -ne 1 ]] ; then
-    echo -e '\nPlease specify interface as parameter (e.g. eth0)\n'
+    echo -e '\nPlease specify network interface as parameter (e.g. eth0).\n'
     exit 1
 fi
 
-# Check if this computer's network interface is up 
-# https://unix.stackexchange.com/questions/121523/check-if-interface-eth0-is-up-configured
-#nicisup=`cat /sys/class/net/$1/operstate` > /dev/null 2>&1
+# Check if this computer's network interface is up
 nicisup=`ip a | sed -rn '/: '"$1"':.*state UP/{N;N;s/.*inet (\S*).*/\1/p}'`
 if [ "$nicisup" == "" ]; then
-    echo -e "\nYour Network interface is down or unavailable.\n"
+    echo -e "\nYour network interface is down or unavailable.\n"
     exit 1
 fi
-#else
-#    echo "Network Interface Card is not up. Please check !!!"
-#    exit 1
-#fi
 
+# Check if tcpdump is available
+if ! command -v tcpdump &> /dev/null
+then
+    echo -e "\ntcpdump could not be found.\n"
+    exit 1
+fi
 
-# Say Hello
+# Good to go ...
 echo -e "\nListening to $1 ...\n"
-echo -e "Power on your new device."
-echo -e "Give it a new DHCP-lease."
 
-#Check if interface is available
-#ifconfig
+# Infinite loop starts here ---
+#while true
+#do
 
-# Loop starts here ---
-while true
-do
+# Find a solution to suppress tcpdump output
 
-# Run tcpdump and wait for MAC-addresses
 #tcpdump -i $1 -n port 67 and port 68 -c 1 | grep -i BOOT
 #tcpdump -i $1 -n port 67 and port 68 2>&1 | grep BOOTP
 #https://stackoverflow.com/questions/34496462/append-output-of-grep-filter-to-a-file !? geht nicht
 #http://xed.ch/help/tcpdump.html
-
 #Muting tcpdump: https://stackoverflow.com/questions/7686989/running-bash-commands-in-the-background-without-printing-job-and-process-ids TODO !!!
-echo -e "\nRunning tcpdump ...\n"
+#?!?!?!!??
 
+echo -e "Running tcpdump on port 67 and 68 (DHCP/BOOTP)\n"
+
+# Run tcpdump and write mac-address of new device to file
 tcpdump -i $1 -n port 67 and port 68 -c 1 | tee mac.tmp
+mac=`cat mac.tmp | awk {'print $9'} | sed 's/.$//'`
 
-echo -e ""
-
-#Save MAC to file
-#cat mac.tmp | awk {'print $9'} | sed 's/.$//'
-testmac=`cat mac.tmp | awk {'print $9'} | sed 's/.$//'`
-
-#Show MAC
-echo -n "MAC: "
-echo -e "$testmac"
-
-#Get IP from arp -a
-testip=`arp -a | grep $testmac |  awk {'print $2'} | sed 's/.$//' | sed 's/^.//'` 
-
-echo -n "IP: "
-echo -e "$testip"
+# Get IP from arp -a
+ip=`arp -a | grep $mac |  awk {'print $2'} | sed 's/.$//' | sed 's/^.//'` 
 
 #Get name from arp -a
-testname=`arp -a | grep $testmac |  awk {'print $1'}`
-echo -n "DNS-Name: "
-echo $testname
+name=`arp -a | grep $mac |  awk {'print $1'}`
 
-#Show manufacurer
-#testmanu=`cat oui.txt | sed s/\:/-/g | grep -i $testmac`
-#testmanu=`cat oui.txt | sed s/\-/:/g | grep -i $testmac | sed 's/.\{9\}$//'`
+#look into http://standards-oui.ieee.org/oui.txt and get manufacturer from first 3 bytes of mac-address
+manu=`cat oui.txt | sed s/\-/:/g | grep -i ${mac::-9} | sed 's/^..................//'` #there might be a better solution ;-)
 
-#https://stackoverflow.com/questions/27658675/how-to-remove-last-n-characters-from-a-string-in-bash
-#tester="aa:bb:cc:dd:ee:ff"
-#echo "Tester: ${tester::-9}"
+# Show gathered information
+echo -e "\nNew node found:\n"
+echo -e "IP: $ip"
+echo -e "MAC-Address: $mac"
+echo -e "DNS-Name: $name"
+echo -e "Manufacturer: $manu\n" 
 
-#look into oui.txt and display nic manufacturer
-#testmanu=`cat oui.txt | sed s/\-/:/g | grep -i ${testmac::-9} | sed 's/[^ ]* *//' | sed 's/^......//'`
-testmanu=`cat oui.txt | sed s/\-/:/g | grep -i ${testmac::-9} | sed 's/^.................//'` #there might be a better solution ;-)
-
-echo -n "Manufacturer: "
-echo $testmanu
-
-echo -e ""
-
-#Take it all down here ... 
-#echo -e "\nNew device found:\n"
-#echo -e "IP: $ip"
-#echo -e "MAC-adress: $mac"
-#echo -e "Manufacturer: " #look into oui.txt 
-
-#Remove mac.tmp
+# Delete mac.tmp
 rm mac.tmp
 
-# Loop ends here ---
-done
+# Infinite loop ends here ---
+#done
